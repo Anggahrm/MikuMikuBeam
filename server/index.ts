@@ -82,9 +82,10 @@ io.on("connection", (socket) => {
 
     worker.on("message", (message) => socket.emit("stats", message));
 
-    worker.on("error", (error) => {
-      console.error(`Worker error: ${error.message}`);
-      socket.emit("stats", { log: `❌ Worker error: ${error.message}` });
+    worker.on("error", (error: unknown) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`Worker error: ${errorMessage}`);
+      socket.emit("stats", { log: `❌ Worker error: ${errorMessage}` });
     });
 
     worker.on("exit", (code) => {
