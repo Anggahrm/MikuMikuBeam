@@ -20,14 +20,21 @@ function getSocketURL() {
   return socketURL;
 }
 
+function getAPIURL() {
+  const host = window.location.host.split(":")[0];
+  const isLocal = isHostLocal(host);
+  return isLocal ? `http://${host}:3000` : "";
+}
+
 const socket = io(getSocketURL());
 
 function ConfigureProxiesAndAgentsView() {
   const [loadingConfiguration, setLoadingConfiguration] = useState(false);
+  const [updatingProxies, setUpdatingProxies] = useState(false);
   const [configuration, setConfiguration] = useState<string[]>([]);
 
   async function retrieveConfiguration(): Promise<string[]> {
-    const response = await fetch(`http://localhost:3000/configuration`);
+    const response = await fetch(`${getAPIURL()}/configuration`);
     const information = (await response.json()) as {
       proxies: string;
       uas: string;
@@ -57,7 +64,7 @@ function ConfigureProxiesAndAgentsView() {
 
     // console.log(obj)
 
-    const response = fetch(`http://localhost:3000/configuration`, {
+    const response = fetch(`${getAPIURL()}/configuration`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -69,6 +76,29 @@ function ConfigureProxiesAndAgentsView() {
       alert("Saved");
       window.location.reload();
     });
+  }
+
+  async function updateProxies() {
+    setUpdatingProxies(true);
+    try {
+      const response = await fetch(`${getAPIURL()}/update-proxies`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      const result = await response.json();
+      if (result.success) {
+        alert(`Proxies updated successfully! Total: ${result.count} proxies`);
+        window.location.reload();
+      } else {
+        alert("Failed to update proxies: " + result.error);
+      }
+    } catch {
+      alert("Error updating proxies");
+    } finally {
+      setUpdatingProxies(false);
+    }
   }
 
   return (
@@ -98,12 +128,21 @@ function ConfigureProxiesAndAgentsView() {
             }
             placeholder="Mozilla/5.0 (Linux; Android 10; K)..."
           ></textarea>
-          <button
-            onClick={saveConfiguration}
-            className="p-4 mt-4 text-white bg-gray-800 rounded-md hover:bg-gray-900"
-          >
-            Write Changes
-          </button>
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={saveConfiguration}
+              className="flex-1 p-4 text-white bg-gray-800 rounded-md hover:bg-gray-900"
+            >
+              Write Changes
+            </button>
+            <button
+              onClick={updateProxies}
+              disabled={updatingProxies}
+              className="flex-1 p-4 text-white bg-pink-500 rounded-md hover:bg-pink-600 disabled:bg-pink-300"
+            >
+              {updatingProxies ? "Updating..." : "Update Proxy"}
+            </button>
+          </div>
         </div>
       )}
     </div>

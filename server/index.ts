@@ -1,15 +1,23 @@
 import express from "express";
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, promises as fsPromises } from "fs";
 import { createServer } from "http";
 import { dirname, join } from "path";
 import { Server } from "socket.io";
 import { fileURLToPath } from "url";
 import { Worker } from "worker_threads";
 
+import axios from "axios";
 import bodyParser from "body-parser";
 import { currentPath, loadProxies, loadUserAgents } from "./fileLoader";
 import { AttackMethod } from "./lib";
 import { filterProxies } from "./proxyUtils";
+
+// Proxy source URLs
+const PROXY_SOURCES = [
+  { url: "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt", protocol: "http" },
+  { url: "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks4.txt", protocol: "socks4" },
+  { url: "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt", protocol: "socks5" },
+];
 
 // Define the workers based on attack type
 const attackWorkers: { [key in AttackMethod]: string } = {
@@ -155,6 +163,60 @@ app.post("/configuration", bodyParser.json(), (req, res) => {
   });
 
   res.send("OK");
+});
+
+app.options("/update-proxies", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.send();
+});
+
+app.post("/update-proxies", async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
+  res.setHeader("Content-Type", "application/json");
+
+  try {
+    const allProxies: string[] = [];
+    const errors: string[] = [];
+    // Basic proxy format validation: IP:port or host:port
+    const proxyRegex = /^[\w.-]+:\d+$/;
+
+    for (const source of PROXY_SOURCES) {
+      try {
+        const response = await axios.get(source.url, { 
+          timeout: 30000,
+          maxContentLength: 50 * 1024 * 1024, // 50MB limit
+        });
+        const lines = response.data
+          .split("\n")
+          .map((line: string) => line.trim())
+          .filter((line: string) => line && !line.startsWith("#") && proxyRegex.test(line));
+
+        for (const line of lines) {
+          allProxies.push(`${source.protocol}://${line}`);
+        }
+      } catch (sourceError) {
+        errors.push(`Failed to fetch ${source.protocol} proxies`);
+        console.error(`Error fetching ${source.protocol} proxies:`, sourceError);
+      }
+    }
+
+    if (allProxies.length === 0) {
+      res.status(500).json({ success: false, error: "Failed to fetch any proxies" });
+      return;
+    }
+
+    const proxiesContent = allProxies.join("\n");
+    await fsPromises.writeFile(join(currentPath(), "data", "proxies.txt"), proxiesContent, {
+      encoding: "utf-8",
+    });
+
+    res.json({ success: true, count: allProxies.length, warnings: errors.length > 0 ? errors : undefined });
+  } catch (error) {
+    console.error("Error updating proxies:", error);
+    res.status(500).json({ success: false, error: "Failed to update proxies" });
+  }
 });
 
 const PORT = parseInt(process.env.PORT || "3000");
