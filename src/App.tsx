@@ -24,6 +24,7 @@ const socket = io(getSocketURL());
 
 function ConfigureProxiesAndAgentsView() {
   const [loadingConfiguration, setLoadingConfiguration] = useState(false);
+  const [updatingProxies, setUpdatingProxies] = useState(false);
   const [configuration, setConfiguration] = useState<string[]>([]);
 
   async function retrieveConfiguration(): Promise<string[]> {
@@ -71,6 +72,29 @@ function ConfigureProxiesAndAgentsView() {
     });
   }
 
+  async function updateProxies() {
+    setUpdatingProxies(true);
+    try {
+      const response = await fetch(`http://localhost:3000/update-proxies`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      const result = await response.json();
+      if (result.success) {
+        alert(`Proxies updated successfully! Total: ${result.count} proxies`);
+        window.location.reload();
+      } else {
+        alert("Failed to update proxies: " + result.error);
+      }
+    } catch {
+      alert("Error updating proxies");
+    } finally {
+      setUpdatingProxies(false);
+    }
+  }
+
   return (
     <div className="fixed grid p-8 mx-auto -translate-x-1/2 -translate-y-1/2 bg-white rounded-md shadow-lg max-w-7xl place-items-center left-1/2 top-1/2">
       {loadingConfiguration ? (
@@ -98,12 +122,21 @@ function ConfigureProxiesAndAgentsView() {
             }
             placeholder="Mozilla/5.0 (Linux; Android 10; K)..."
           ></textarea>
-          <button
-            onClick={saveConfiguration}
-            className="p-4 mt-4 text-white bg-gray-800 rounded-md hover:bg-gray-900"
-          >
-            Write Changes
-          </button>
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={saveConfiguration}
+              className="flex-1 p-4 text-white bg-gray-800 rounded-md hover:bg-gray-900"
+            >
+              Write Changes
+            </button>
+            <button
+              onClick={updateProxies}
+              disabled={updatingProxies}
+              className="flex-1 p-4 text-white bg-pink-500 rounded-md hover:bg-pink-600 disabled:bg-pink-300"
+            >
+              {updatingProxies ? "Updating..." : "Update Proxy"}
+            </button>
+          </div>
         </div>
       )}
     </div>

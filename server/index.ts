@@ -6,10 +6,18 @@ import { Server } from "socket.io";
 import { fileURLToPath } from "url";
 import { Worker } from "worker_threads";
 
+import axios from "axios";
 import bodyParser from "body-parser";
 import { currentPath, loadProxies, loadUserAgents } from "./fileLoader";
 import { AttackMethod } from "./lib";
 import { filterProxies } from "./proxyUtils";
+
+// Proxy source URLs
+const PROXY_SOURCES = [
+  { url: "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt", protocol: "http" },
+  { url: "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks4.txt", protocol: "socks4" },
+  { url: "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt", protocol: "socks5" },
+];
 
 // Define the workers based on attack type
 const attackWorkers: { [key in AttackMethod]: string } = {
@@ -154,6 +162,44 @@ app.post("/configuration", bodyParser.json(), (req, res) => {
   });
 
   res.send("OK");
+});
+
+app.options("/update-proxies", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.send();
+});
+
+app.post("/update-proxies", async (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
+  res.setHeader("Content-Type", "application/json");
+
+  try {
+    const allProxies: string[] = [];
+
+    for (const source of PROXY_SOURCES) {
+      const response = await axios.get(source.url, { timeout: 30000 });
+      const lines = response.data
+        .split("\n")
+        .map((line: string) => line.trim())
+        .filter((line: string) => line && !line.startsWith("#"));
+
+      for (const line of lines) {
+        allProxies.push(`${source.protocol}://${line}`);
+      }
+    }
+
+    const proxiesContent = allProxies.join("\n");
+    writeFileSync(join(currentPath(), "data", "proxies.txt"), proxiesContent, {
+      encoding: "utf-8",
+    });
+
+    res.json({ success: true, count: allProxies.length });
+  } catch (error) {
+    console.error("Error updating proxies:", error);
+    res.status(500).json({ success: false, error: "Failed to update proxies" });
+  }
 });
 
 const PORT = parseInt(process.env.PORT || "3000");
