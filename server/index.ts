@@ -1,5 +1,5 @@
 import express from "express";
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync, promises as fsPromises } from "fs";
 import { createServer } from "http";
 import { dirname, join } from "path";
 import { Server } from "socket.io";
@@ -177,25 +177,36 @@ app.post("/update-proxies", async (req, res) => {
 
   try {
     const allProxies: string[] = [];
+    const errors: string[] = [];
 
     for (const source of PROXY_SOURCES) {
-      const response = await axios.get(source.url, { timeout: 30000 });
-      const lines = response.data
-        .split("\n")
-        .map((line: string) => line.trim())
-        .filter((line: string) => line && !line.startsWith("#"));
+      try {
+        const response = await axios.get(source.url, { timeout: 30000 });
+        const lines = response.data
+          .split("\n")
+          .map((line: string) => line.trim())
+          .filter((line: string) => line && !line.startsWith("#"));
 
-      for (const line of lines) {
-        allProxies.push(`${source.protocol}://${line}`);
+        for (const line of lines) {
+          allProxies.push(`${source.protocol}://${line}`);
+        }
+      } catch (sourceError) {
+        errors.push(`Failed to fetch ${source.protocol} proxies`);
+        console.error(`Error fetching ${source.protocol} proxies:`, sourceError);
       }
     }
 
+    if (allProxies.length === 0) {
+      res.status(500).json({ success: false, error: "Failed to fetch any proxies" });
+      return;
+    }
+
     const proxiesContent = allProxies.join("\n");
-    writeFileSync(join(currentPath(), "data", "proxies.txt"), proxiesContent, {
+    await fsPromises.writeFile(join(currentPath(), "data", "proxies.txt"), proxiesContent, {
       encoding: "utf-8",
     });
 
-    res.json({ success: true, count: allProxies.length });
+    res.json({ success: true, count: allProxies.length, warnings: errors.length > 0 ? errors : undefined });
   } catch (error) {
     console.error("Error updating proxies:", error);
     res.status(500).json({ success: false, error: "Failed to update proxies" });

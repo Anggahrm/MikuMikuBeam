@@ -20,6 +20,12 @@ function getSocketURL() {
   return socketURL;
 }
 
+function getAPIURL() {
+  const host = window.location.host.split(":")[0];
+  const isLocal = isHostLocal(host);
+  return isLocal ? `http://${host}:3000` : "";
+}
+
 const socket = io(getSocketURL());
 
 function ConfigureProxiesAndAgentsView() {
@@ -28,7 +34,7 @@ function ConfigureProxiesAndAgentsView() {
   const [configuration, setConfiguration] = useState<string[]>([]);
 
   async function retrieveConfiguration(): Promise<string[]> {
-    const response = await fetch(`http://localhost:3000/configuration`);
+    const response = await fetch(`${getAPIURL()}/configuration`);
     const information = (await response.json()) as {
       proxies: string;
       uas: string;
@@ -58,7 +64,7 @@ function ConfigureProxiesAndAgentsView() {
 
     // console.log(obj)
 
-    const response = fetch(`http://localhost:3000/configuration`, {
+    const response = fetch(`${getAPIURL()}/configuration`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -75,7 +81,7 @@ function ConfigureProxiesAndAgentsView() {
   async function updateProxies() {
     setUpdatingProxies(true);
     try {
-      const response = await fetch(`http://localhost:3000/update-proxies`, {
+      const response = await fetch(`${getAPIURL()}/update-proxies`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
