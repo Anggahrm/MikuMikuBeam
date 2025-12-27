@@ -178,14 +178,19 @@ app.post("/update-proxies", async (req, res) => {
   try {
     const allProxies: string[] = [];
     const errors: string[] = [];
+    // Basic proxy format validation: IP:port or host:port
+    const proxyRegex = /^[\w.-]+:\d+$/;
 
     for (const source of PROXY_SOURCES) {
       try {
-        const response = await axios.get(source.url, { timeout: 30000 });
+        const response = await axios.get(source.url, { 
+          timeout: 30000,
+          maxContentLength: 50 * 1024 * 1024, // 50MB limit
+        });
         const lines = response.data
           .split("\n")
           .map((line: string) => line.trim())
-          .filter((line: string) => line && !line.startsWith("#"));
+          .filter((line: string) => line && !line.startsWith("#") && proxyRegex.test(line));
 
         for (const line of lines) {
           allProxies.push(`${source.protocol}://${line}`);
