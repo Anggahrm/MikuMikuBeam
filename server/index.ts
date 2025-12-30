@@ -42,7 +42,7 @@ const io = new Server(httpServer, {
   },
 });
 
-const proxies = loadProxies();
+let proxies = loadProxies();
 const userAgents = loadUserAgents();
 
 console.log("Proxies loaded:", proxies.length);
@@ -153,14 +153,17 @@ app.post("/configuration", bodyParser.json(), (req, res) => {
   // console.log(req.body)
 
   // atob and btoa are used to avoid the problems in sending data with // characters, etc.
-  const proxies = atob(req.body["proxies"]);
+  const proxiesData = atob(req.body["proxies"]);
   const uas = atob(req.body["uas"]);
-  writeFileSync(join(currentPath(), "data", "proxies.txt"), proxies, {
+  writeFileSync(join(currentPath(), "data", "proxies.txt"), proxiesData, {
     encoding: "utf-8",
   });
   writeFileSync(join(currentPath(), "data", "uas.txt"), uas, {
     encoding: "utf-8",
   });
+
+  // Reload proxies into memory
+  proxies = loadProxies();
 
   res.send("OK");
 });
@@ -211,6 +214,9 @@ app.post("/update-proxies", async (req, res) => {
     await fsPromises.writeFile(join(currentPath(), "data", "proxies.txt"), proxiesContent, {
       encoding: "utf-8",
     });
+
+    // Reload proxies into memory
+    proxies = loadProxies();
 
     res.json({ success: true, count: allProxies.length, warnings: errors.length > 0 ? errors : undefined });
   } catch (error) {
