@@ -1,4 +1,4 @@
-import { Bot, ScrollText, Wand2, Wifi, Zap } from "lucide-react";
+import { Bot, Lightbulb, ScrollText, Search, Wand2, Wifi, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 
@@ -170,6 +170,10 @@ function App() {
   const [currentTask, setCurrentTask] = useState<NodeJS.Timeout | null>(null);
   const [audioVol, setAudioVol] = useState(100);
   const [openedConfig, setOpenedConfig] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResults, setScanResults] = useState<{ port: number; service: string }[]>([]);
+  const [showScanResults, setShowScanResults] = useState(false);
+  const [recommendation, setRecommendation] = useState<{ method: string; reason: string } | null>(null);
 
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -243,9 +247,25 @@ function App() {
       setIsAttacking(false);
     });
 
+    socket.on("scanResult", (data) => {
+      if (data.log) addLog(data.log);
+      if (data.type === "port_open") {
+        setScanResults((prev) => [...prev, { port: data.port, service: data.service }]);
+      }
+      if (data.type === "scan_complete") {
+        setShowScanResults(true);
+      }
+    });
+
+    socket.on("scanEnd", () => {
+      setIsScanning(false);
+    });
+
     return () => {
       socket.off("stats");
       socket.off("attackEnd");
+      socket.off("scanResult");
+      socket.off("scanEnd");
     };
   }, []);
 
@@ -303,6 +323,59 @@ function App() {
   const stopAttack = () => {
     socket.emit("stopAttack");
     setIsAttacking(false);
+  };
+
+  const startPortScan = () => {
+    if (!target.trim()) {
+      alert("Please enter a target!");
+      return;
+    }
+
+    // Extract host from target (remove protocol and port if present)
+    let host = target;
+    if (host.includes("://")) {
+      host = host.split("://")[1];
+    }
+    if (host.includes("/")) {
+      host = host.split("/")[0];
+    }
+    if (host.includes(":")) {
+      host = host.split(":")[0];
+    }
+
+    setIsScanning(true);
+    setScanResults([]);
+    setShowScanResults(false);
+    addLog(`🔍 Starting port scan on ${host}...`);
+    socket.emit("startPortScan", { target: host });
+  };
+
+  const stopPortScan = () => {
+    socket.emit("stopPortScan");
+    setIsScanning(false);
+  };
+
+  const getRecommendedMethod = async () => {
+    if (!target.trim()) {
+      alert("Please enter a target first!");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${getAPIURL()}/recommend-method`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ target }),
+      });
+      const data = await response.json();
+      setRecommendation({ method: data.recommended, reason: data.reason });
+      setAttackMethod(data.recommended);
+      addLog(`💡 Recommended: ${data.methodInfo.name} - ${data.reason}`);
+    } catch {
+      addLog("❌ Failed to get recommendation");
+    }
   };
 
   return (
@@ -403,6 +476,24 @@ function App() {
                 >
                   <ScrollText className="w-5 h-5" />
                 </button>
+                <button
+                  onClick={() => (isScanning ? stopPortScan() : startPortScan())}
+                  disabled={isAttacking}
+                  className={`px-2 py-2 rounded-lg font-semibold text-white transition-all flex items-center justify-center gap-2 ${
+                    isScanning ? "bg-orange-500 hover:bg-orange-600" : "bg-purple-500 hover:bg-purple-600"
+                  } disabled:bg-gray-400`}
+                  title="Port Scanner"
+                >
+                  <Search className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={getRecommendedMethod}
+                  disabled={isAttacking || isScanning}
+                  className="px-2 py-2 rounded-lg font-semibold text-white transition-all flex items-center justify-center gap-2 bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-400"
+                  title="Get Recommended Method"
+                >
+                  <Lightbulb className="w-5 h-5" />
+                </button>
               </div>
             </div>
 
@@ -429,6 +520,7 @@ function App() {
                   <option value="http_bypass">HTTP/Bypass</option>
                   <option value="http_slowloris">HTTP/Slowloris</option>
                   <option value="tcp_flood">TCP/Flood</option>
+                  <option value="udp_flood">UDP/Flood</option>
                   <option value="minecraft_ping">Minecraft/Ping</option>
                 </select>
               </div>
@@ -586,6 +678,62 @@ function App() {
         </div>
 
         {openedConfig ? <ConfigureProxiesAndAgentsView /> : undefined}
+
+        {/* Port Scan Results Modal */}
+        {showScanResults && scanResults.length > 0 && (
+          <div className="fixed grid p-8 mx-auto -translate-x-1/2 -translate-y-1/2 bg-white rounded-md shadow-lg max-w-lg place-items-center left-1/2 top-1/2">
+            <div className="w-full">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-gray-800">🔍 Port Scan Results</h2>
+                <button
+                  onClick={() => setShowScanResults(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="py-2 px-4">Port</th>
+                      <th className="py-2 px-4">Service</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scanResults.map((result, index) => (
+                      <tr key={index} className="border-b hover:bg-gray-50">
+                        <td className="py-2 px-4 font-mono text-pink-600">{result.port}</td>
+                        <td className="py-2 px-4">{result.service}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-4 text-sm text-gray-500">
+                Found {scanResults.length} open port(s)
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Recommendation Display */}
+        {recommendation && (
+          <div className="fixed bottom-4 right-4 bg-yellow-100 border border-yellow-300 rounded-lg p-4 shadow-lg max-w-sm">
+            <div className="flex justify-between items-start">
+              <div>
+                <p className="font-semibold text-yellow-800">💡 Recommended Method</p>
+                <p className="text-sm text-yellow-700">{recommendation.reason}</p>
+              </div>
+              <button
+                onClick={() => setRecommendation(null)}
+                className="text-yellow-600 hover:text-yellow-800 ml-2"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-col items-center">
           <span className="text-sm text-center text-gray-500">
