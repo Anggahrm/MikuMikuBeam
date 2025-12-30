@@ -49,18 +49,26 @@ function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; removeToast:
 function useToast() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastId = useRef(0);
+  const timeoutRefs = useRef<Map<number, NodeJS.Timeout>>(new Map());
 
   const addToast = useCallback((message: string, type: ToastType = "info") => {
     const id = toastId.current++;
     setToasts((prev) => [...prev, { id, message, type }]);
     
     // Auto-remove after 4 seconds
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
+      timeoutRefs.current.delete(id);
     }, 4000);
+    timeoutRefs.current.set(id, timeoutId);
   }, []);
 
   const removeToast = useCallback((id: number) => {
+    const timeoutId = timeoutRefs.current.get(id);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutRefs.current.delete(id);
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
