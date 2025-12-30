@@ -1,6 +1,79 @@
-import { Bot, ScrollText, Wand2, Wifi, Zap } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Bot, Lightbulb, ScrollText, Search, Wand2, Wifi, X, Zap } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
+
+// Toast notification types and component
+type ToastType = "success" | "error" | "info" | "warning";
+
+interface Toast {
+  id: number;
+  message: string;
+  type: ToastType;
+}
+
+function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; removeToast: (id: number) => void }) {
+  const getToastStyles = (type: ToastType) => {
+    switch (type) {
+      case "success":
+        return "bg-green-500 text-white";
+      case "error":
+        return "bg-red-500 text-white";
+      case "warning":
+        return "bg-yellow-500 text-white";
+      case "info":
+      default:
+        return "bg-blue-500 text-white";
+    }
+  };
+
+  return (
+    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full px-4 sm:px-0">
+      {toasts.map((toast) => (
+        <div
+          key={toast.id}
+          className={`${getToastStyles(toast.type)} px-4 py-3 rounded-lg shadow-lg flex items-center justify-between gap-2 animate-slide-in`}
+        >
+          <span className="text-sm font-medium break-words flex-1">{toast.message}</span>
+          <button
+            onClick={() => removeToast(toast.id)}
+            className="flex-shrink-0 hover:opacity-80 transition-opacity"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function useToast() {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastId = useRef(0);
+  const timeoutRefs = useRef<Map<number, NodeJS.Timeout>>(new Map());
+
+  const addToast = useCallback((message: string, type: ToastType = "info") => {
+    const id = toastId.current++;
+    setToasts((prev) => [...prev, { id, message, type }]);
+    
+    // Auto-remove after 4 seconds
+    const timeoutId = setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+      timeoutRefs.current.delete(id);
+    }, 4000);
+    timeoutRefs.current.set(id, timeoutId);
+  }, []);
+
+  const removeToast = useCallback((id: number) => {
+    const timeoutId = timeoutRefs.current.get(id);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutRefs.current.delete(id);
+    }
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  return { toasts, addToast, removeToast };
+}
 
 function isHostLocal(host: string) {
   return (
@@ -28,7 +101,7 @@ function getAPIURL() {
 
 const socket = io(getSocketURL());
 
-function ConfigureProxiesAndAgentsView() {
+function ConfigureProxiesAndAgentsView({ addToast, onClose }: { addToast: (message: string, type: ToastType) => void; onClose: () => void }) {
   const [loadingConfiguration, setLoadingConfiguration] = useState(false);
   const [updatingProxies, setUpdatingProxies] = useState(false);
   const [configuration, setConfiguration] = useState<string[]>([]);
@@ -73,8 +146,8 @@ function ConfigureProxiesAndAgentsView() {
     });
 
     response.then(() => {
-      alert("Saved");
-      window.location.reload();
+      addToast("Configuration saved successfully!", "success");
+      setTimeout(() => window.location.reload(), 1000);
     });
   }
 
@@ -89,62 +162,73 @@ function ConfigureProxiesAndAgentsView() {
       });
       const result = await response.json();
       if (result.success) {
-        alert(`Proxies updated successfully! Total: ${result.count} proxies`);
-        window.location.reload();
+        addToast(`Proxies updated! Total: ${result.count} proxies`, "success");
+        setTimeout(() => window.location.reload(), 1000);
       } else {
-        alert("Failed to update proxies: " + result.error);
+        addToast("Failed to update proxies: " + result.error, "error");
       }
     } catch {
-      alert("Error updating proxies");
+      addToast("Error updating proxies", "error");
     } finally {
       setUpdatingProxies(false);
     }
   }
 
   return (
-    <div className="fixed grid p-8 mx-auto -translate-x-1/2 -translate-y-1/2 bg-white rounded-md shadow-lg max-w-7xl place-items-center left-1/2 top-1/2">
-      {loadingConfiguration ? (
-        <div className="flex flex-col items-center justify-center space-y-2">
-          <img src="/loading.gif" className="rounded-sm shadow-sm" />
-          <p>Loading proxies.txt and uas.txt...</p>
+    <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-md shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto p-4 sm:p-8">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-bold text-gray-800">Configuration</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 p-1"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
-      ) : (
-        <div className="w-[56rem] flex flex-col">
-          <p className="pl-1 mb-1 italic">proxies.txt</p>
-          <textarea
-            value={configuration[0]}
-            className="w-full h-40 p-2 border-black/10 border-[1px] rounded-sm resize-none"
-            onChange={(e) =>
-              setConfiguration([e.target.value, configuration[1]])
-            }
-            placeholder="socks5://0.0.0.0&#10;socks4://user:pass@0.0.0.0:12345"
-          ></textarea>
-          <p className="pl-1 mt-2 mb-1 italic">uas.txt</p>
-          <textarea
-            value={configuration[1]}
-            className="w-full h-40 p-2 border-black/10 border-[1px] rounded-sm resize-none"
-            onChange={(e) =>
-              setConfiguration([configuration[0], e.target.value])
-            }
-            placeholder="Mozilla/5.0 (Linux; Android 10; K)..."
-          ></textarea>
-          <div className="flex gap-2 mt-4">
-            <button
-              onClick={saveConfiguration}
-              className="flex-1 p-4 text-white bg-gray-800 rounded-md hover:bg-gray-900"
-            >
-              Write Changes
-            </button>
-            <button
-              onClick={updateProxies}
-              disabled={updatingProxies}
-              className="flex-1 p-4 text-white bg-pink-500 rounded-md hover:bg-pink-600 disabled:bg-pink-300"
-            >
-              {updatingProxies ? "Updating..." : "Update Proxy"}
-            </button>
+        {loadingConfiguration ? (
+          <div className="flex flex-col items-center justify-center space-y-2 py-8">
+            <img src="/loading.gif" className="rounded-sm shadow-sm" />
+            <p>Loading proxies.txt and uas.txt...</p>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="flex flex-col">
+            <p className="pl-1 mb-1 italic">proxies.txt</p>
+            <textarea
+              value={configuration[0]}
+              className="w-full h-32 sm:h-40 p-2 border-black/10 border-[1px] rounded-sm resize-none text-sm"
+              onChange={(e) =>
+                setConfiguration([e.target.value, configuration[1]])
+              }
+              placeholder="socks5://0.0.0.0&#10;socks4://user:pass@0.0.0.0:12345"
+            ></textarea>
+            <p className="pl-1 mt-2 mb-1 italic">uas.txt</p>
+            <textarea
+              value={configuration[1]}
+              className="w-full h-32 sm:h-40 p-2 border-black/10 border-[1px] rounded-sm resize-none text-sm"
+              onChange={(e) =>
+                setConfiguration([configuration[0], e.target.value])
+              }
+              placeholder="Mozilla/5.0 (Linux; Android 10; K)..."
+            ></textarea>
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <button
+                onClick={saveConfiguration}
+                className="flex-1 p-3 sm:p-4 text-white bg-gray-800 rounded-md hover:bg-gray-900 text-sm sm:text-base"
+              >
+                Write Changes
+              </button>
+              <button
+                onClick={updateProxies}
+                disabled={updatingProxies}
+                className="flex-1 p-3 sm:p-4 text-white bg-pink-500 rounded-md hover:bg-pink-600 disabled:bg-pink-300 text-sm sm:text-base"
+              >
+                {updatingProxies ? "Updating..." : "Update Proxy"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -170,7 +254,12 @@ function App() {
   const [currentTask, setCurrentTask] = useState<NodeJS.Timeout | null>(null);
   const [audioVol, setAudioVol] = useState(100);
   const [openedConfig, setOpenedConfig] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResults, setScanResults] = useState<{ port: number; service: string }[]>([]);
+  const [showScanResults, setShowScanResults] = useState(false);
+  const [recommendation, setRecommendation] = useState<{ method: string; reason: string } | null>(null);
 
+  const { toasts, addToast, removeToast } = useToast();
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -243,9 +332,25 @@ function App() {
       setIsAttacking(false);
     });
 
+    socket.on("scanResult", (data) => {
+      if (data.log) addLog(data.log);
+      if (data.type === "port_open") {
+        setScanResults((prev) => [...prev, { port: data.port, service: data.service }]);
+      }
+      if (data.type === "scan_complete") {
+        setShowScanResults(true);
+      }
+    });
+
+    socket.on("scanEnd", () => {
+      setIsScanning(false);
+    });
+
     return () => {
       socket.off("stats");
       socket.off("attackEnd");
+      socket.off("scanResult");
+      socket.off("scanEnd");
     };
   }, []);
 
@@ -261,7 +366,7 @@ function App() {
 
   const startAttack = (isQuick?: boolean) => {
     if (!target.trim()) {
-      alert("Please enter a target!");
+      addToast("Please enter a target!", "warning");
       return;
     }
 
@@ -305,25 +410,78 @@ function App() {
     setIsAttacking(false);
   };
 
+  const startPortScan = () => {
+    if (!target.trim()) {
+      addToast("Please enter a target!", "warning");
+      return;
+    }
+
+    // Extract host from target (remove protocol and port if present)
+    let host = target;
+    if (host.includes("://")) {
+      host = host.split("://")[1];
+    }
+    if (host.includes("/")) {
+      host = host.split("/")[0];
+    }
+    if (host.includes(":")) {
+      host = host.split(":")[0];
+    }
+
+    setIsScanning(true);
+    setScanResults([]);
+    setShowScanResults(false);
+    addLog(`🔍 Starting port scan on ${host}...`);
+    socket.emit("startPortScan", { target: host });
+  };
+
+  const stopPortScan = () => {
+    socket.emit("stopPortScan");
+    setIsScanning(false);
+  };
+
+  const getRecommendedMethod = async () => {
+    if (!target.trim()) {
+      addToast("Please enter a target first!", "warning");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${getAPIURL()}/recommend-method`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ target }),
+      });
+      const data = await response.json();
+      setRecommendation({ method: data.recommended, reason: data.reason });
+      setAttackMethod(data.recommended);
+      addLog(`💡 Recommended: ${data.methodInfo.name} - ${data.reason}`);
+    } catch {
+      addLog("❌ Failed to get recommendation");
+    }
+  };
+
   return (
     <div
-      className={`w-screen h-screen bg-gradient-to-br ${
+      className={`w-screen min-h-screen bg-gradient-to-br ${
         animState === 0 || animState === 3
           ? "from-pink-100 to-blue-100"
           : animState === 2
           ? "background-pulse"
           : "bg-gray-950"
-      } p-8 overflow-y-auto ${actuallyAttacking ? "shake" : ""}`}
+      } p-4 sm:p-8 overflow-y-auto ${actuallyAttacking ? "shake" : ""}`}
     >
       <audio ref={audioRef} src="/audio.mp3" />
 
-      <div className="max-w-2xl mx-auto space-y-8">
+      <div className="max-w-2xl mx-auto space-y-4 sm:space-y-8">
         <div className="text-center">
-          <h1 className="mb-2 text-4xl font-bold text-pink-500">
+          <h1 className="mb-2 text-2xl sm:text-4xl font-bold text-pink-500">
             Miku Miku Beam
           </h1>
           <p
-            className={`${
+            className={`text-sm sm:text-base ${
               animState === 0 || animState === 3
                 ? "text-gray-600"
                 : "text-white"
@@ -335,13 +493,13 @@ function App() {
         </div>
 
         <div
-          className={`relative p-6 overflow-hidden rounded-lg shadow-xl ${
+          className={`relative p-3 sm:p-6 overflow-hidden rounded-lg shadow-xl ${
             animState === 0 || animState === 3 ? "bg-white" : "bg-gray-950"
           }`}
         >
           {/* Miku GIF */}
           <div
-            className="flex justify-center w-full h-48 mb-6"
+            className="flex justify-center w-full h-32 sm:h-48 mb-4 sm:mb-6"
             style={{
               backgroundImage: "url('/miku.gif')",
               backgroundRepeat: "no-repeat",
@@ -354,62 +512,85 @@ function App() {
 
           {/* Attack Configuration */}
           <div className="mb-6 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <input
-                type="text"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                placeholder="Enter target URL or IP"
-                className={`${
-                  animState === 0 || animState === 3 ? "" : "text-white"
-                } px-4 py-2 border border-pink-200 rounded-lg outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200`}
+            {/* Target Input */}
+            <input
+              type="text"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder="Enter target URL or IP"
+              className={`${
+                animState === 0 || animState === 3 ? "" : "text-white"
+              } w-full px-4 py-2 border border-pink-200 rounded-lg outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200`}
+              disabled={isAttacking}
+            />
+            
+            {/* Action Buttons - Responsive Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+              <button
+                onClick={() => (isAttacking ? stopAttack() : startAttack())}
+                className={`
+                col-span-2 sm:col-span-2 md:col-span-2 px-4 py-2 rounded-lg font-semibold text-white transition-all
+                ${
+                  isAttacking
+                    ? "bg-red-500 hover:bg-red-600"
+                    : "bg-pink-500 hover:bg-pink-600"
+                }
+                flex items-center justify-center gap-2 text-sm sm:text-base
+              `}
+              >
+                <Wand2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="hidden xs:inline">{isAttacking ? "Stop Beam" : "Start Beam"}</span>
+                <span className="xs:hidden">{isAttacking ? "Stop" : "Start"}</span>
+              </button>
+              <button
+                onClick={() =>
+                  isAttacking ? stopAttack() : startAttack(true)
+                }
+                className={`
+                px-2 py-2 rounded-lg font-semibold text-white transition-all
+                ${
+                  isAttacking
+                    ? "bg-gray-500 hover:bg-red-600"
+                    : "bg-cyan-500 hover:bg-cyan-600"
+                }
+                flex items-center justify-center
+              `}
+                title="Quick Start"
+              >
+                <Zap className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+              <button
+                className="px-2 py-2 rounded-lg font-semibold text-white transition-all flex items-center justify-center bg-slate-800 hover:bg-slate-900"
+                onClick={() => setOpenedConfig(true)}
+                title="Configuration"
+              >
+                <ScrollText className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+              <button
+                onClick={() => (isScanning ? stopPortScan() : startPortScan())}
                 disabled={isAttacking}
-              />
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => (isAttacking ? stopAttack() : startAttack())}
-                  className={`
-                  px-8 py-2 rounded-lg font-semibold text-white transition-all w-full
-                  ${
-                    isAttacking
-                      ? "bg-red-500 hover:bg-red-600"
-                      : "bg-pink-500 hover:bg-pink-600"
-                  }
-                  flex items-center justify-center gap-2
-                `}
-                >
-                  <Wand2 className="w-5 h-5" />
-                  {isAttacking ? "Stop Beam" : "Start Miku Beam"}
-                </button>
-                <button
-                  onClick={() =>
-                    isAttacking ? stopAttack() : startAttack(true)
-                  }
-                  className={`
-                  px-2 py-2 rounded-lg font-semibold text-white transition-all
-                  ${
-                    isAttacking
-                      ? "bg-gray-500 hover:bg-red-600"
-                      : "bg-cyan-500 hover:bg-cyan-600"
-                  }
-                  flex items-center justify-center gap-2
-                `}
-                >
-                  <Zap className="w-5 h-5" />
-                </button>
-                <button
-                  className={`px-2 py-2 rounded-lg font-semibold text-white transition-all flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900`}
-                  onClick={() => setOpenedConfig(true)}
-                >
-                  <ScrollText className="w-5 h-5" />
-                </button>
-              </div>
+                className={`px-2 py-2 rounded-lg font-semibold text-white transition-all flex items-center justify-center ${
+                  isScanning ? "bg-orange-500 hover:bg-orange-600" : "bg-purple-500 hover:bg-purple-600"
+                } disabled:bg-gray-400`}
+                title="Port Scanner"
+              >
+                <Search className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+              <button
+                onClick={getRecommendedMethod}
+                disabled={isAttacking || isScanning}
+                className="px-2 py-2 rounded-lg font-semibold text-white transition-all flex items-center justify-center bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-400"
+                title="Get Recommended Method"
+              >
+                <Lightbulb className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
             </div>
 
-            <div className="grid grid-cols-4 gap-4">
-              <div>
+            {/* Attack Parameters - Responsive Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+              <div className="col-span-2 sm:col-span-1">
                 <label
-                  className={`block mb-1 text-sm font-medium ${
+                  className={`block mb-1 text-xs sm:text-sm font-medium ${
                     animState === 0 || animState === 3
                       ? "text-gray-700"
                       : "text-white"
@@ -422,19 +603,20 @@ function App() {
                   onChange={(e) => setAttackMethod(e.target.value)}
                   className={`${
                     animState === 0 || animState === 3 ? "" : "text-gray-900"
-                  } w-full px-4 py-2 border border-pink-200 rounded-lg outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200`}
+                  } w-full px-2 sm:px-4 py-2 text-sm border border-pink-200 rounded-lg outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200`}
                   disabled={isAttacking}
                 >
                   <option value="http_flood">HTTP/Flood</option>
                   <option value="http_bypass">HTTP/Bypass</option>
                   <option value="http_slowloris">HTTP/Slowloris</option>
                   <option value="tcp_flood">TCP/Flood</option>
+                  <option value="udp_flood">UDP/Flood</option>
                   <option value="minecraft_ping">Minecraft/Ping</option>
                 </select>
               </div>
               <div>
                 <label
-                  className={`block mb-1 text-sm font-medium ${
+                  className={`block mb-1 text-xs sm:text-sm font-medium ${
                     animState === 0 || animState === 3
                       ? "text-gray-700"
                       : "text-white"
@@ -448,7 +630,7 @@ function App() {
                   onChange={(e) => setPacketSize(Number(e.target.value))}
                   className={`${
                     animState === 0 || animState === 3 ? "" : "text-white"
-                  } w-full px-4 py-2 border border-pink-200 rounded-lg outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200`}
+                  } w-full px-2 sm:px-4 py-2 text-sm border border-pink-200 rounded-lg outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200`}
                   disabled={isAttacking}
                   min="1"
                   max="1500"
@@ -456,13 +638,13 @@ function App() {
               </div>
               <div>
                 <label
-                  className={`block mb-1 text-sm font-medium ${
+                  className={`block mb-1 text-xs sm:text-sm font-medium ${
                     animState === 0 || animState === 3
                       ? "text-gray-700"
                       : "text-white"
                   }`}
                 >
-                  Duration (seconds)
+                  Duration (sec)
                 </label>
                 <input
                   type="number"
@@ -470,7 +652,7 @@ function App() {
                   onChange={(e) => setDuration(Number(e.target.value))}
                   className={`${
                     animState === 0 || animState === 3 ? "" : "text-white"
-                  } w-full px-4 py-2 border border-pink-200 rounded-lg outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200`}
+                  } w-full px-2 sm:px-4 py-2 text-sm border border-pink-200 rounded-lg outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200`}
                   disabled={isAttacking}
                   min="1"
                   max="300"
@@ -478,13 +660,13 @@ function App() {
               </div>
               <div>
                 <label
-                  className={`block mb-1 text-sm font-medium ${
+                  className={`block mb-1 text-xs sm:text-sm font-medium ${
                     animState === 0 || animState === 3
                       ? "text-gray-700"
                       : "text-white"
                   }`}
                 >
-                  Packet Delay (ms)
+                  Delay (ms)
                 </label>
                 <input
                   type="number"
@@ -492,7 +674,7 @@ function App() {
                   onChange={(e) => setPacketDelay(Number(e.target.value))}
                   className={`${
                     animState === 0 || animState === 3 ? "" : "text-white"
-                  } w-full px-4 py-2 border border-pink-200 rounded-lg outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200`}
+                  } w-full px-2 sm:px-4 py-2 text-sm border border-pink-200 rounded-lg outline-none focus:border-pink-500 focus:ring-2 focus:ring-pink-200`}
                   disabled={isAttacking}
                   min="1"
                   max="1000"
@@ -502,14 +684,14 @@ function App() {
           </div>
 
           {/* Stats Widgets */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="p-4 rounded-lg bg-gradient-to-br from-pink-500/10 to-blue-500/10">
-              <div className="flex items-center gap-2 mb-2 text-pink-600">
-                <Zap className="w-4 h-4" />
-                <span className="font-semibold">Packets/sec</span>
+          <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
+            <div className="p-2 sm:p-4 rounded-lg bg-gradient-to-br from-pink-500/10 to-blue-500/10">
+              <div className="flex items-center gap-1 sm:gap-2 mb-1 sm:mb-2 text-pink-600">
+                <Zap className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="font-semibold text-xs sm:text-base">PPS</span>
               </div>
               <div
-                className={`text-2xl font-bold ${
+                className={`text-lg sm:text-2xl font-bold ${
                   animState === 0 || animState === 3
                     ? "text-gray-800"
                     : "text-white"
@@ -518,10 +700,10 @@ function App() {
                 {stats.pps.toLocaleString()}
               </div>
             </div>
-            <div className="p-4 rounded-lg bg-gradient-to-br from-pink-500/10 to-blue-500/10">
-              <div className="flex items-center gap-2 mb-2 text-pink-600">
-                <Bot className="w-4 h-4" />
-                <span className="font-semibold">Active Bots</span>
+            <div className="p-2 sm:p-4 rounded-lg bg-gradient-to-br from-pink-500/10 to-blue-500/10">
+              <div className="flex items-center gap-1 sm:gap-2 mb-1 sm:mb-2 text-pink-600">
+                <Bot className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="font-semibold text-xs sm:text-base">Bots</span>
               </div>
               <div
                 className={`text-2xl font-bold ${
@@ -533,13 +715,13 @@ function App() {
                 {stats.bots.toLocaleString()}
               </div>
             </div>
-            <div className="p-4 rounded-lg bg-gradient-to-br from-pink-500/10 to-blue-500/10">
-              <div className="flex items-center gap-2 mb-2 text-pink-600">
-                <Wifi className="w-4 h-4" />
-                <span className="font-semibold">Total Packets</span>
+            <div className="p-2 sm:p-4 rounded-lg bg-gradient-to-br from-pink-500/10 to-blue-500/10">
+              <div className="flex items-center gap-1 sm:gap-2 mb-1 sm:mb-2 text-pink-600">
+                <Wifi className="w-3 h-3 sm:w-4 sm:h-4" />
+                <span className="font-semibold text-xs sm:text-base">Total</span>
               </div>
               <div
-                className={`text-2xl font-bold ${
+                className={`text-lg sm:text-2xl font-bold ${
                   animState === 0 || animState === 3
                     ? "text-gray-800"
                     : "text-white"
@@ -551,7 +733,7 @@ function App() {
           </div>
 
           {/* Progress Bar */}
-          <div className="h-4 mb-6 overflow-hidden bg-gray-200 rounded-full">
+          <div className="h-3 sm:h-4 mb-6 overflow-hidden bg-gray-200 rounded-full">
             <div
               className="h-full transition-all duration-500 bg-gradient-to-r from-pink-500 to-blue-500"
               style={{ width: `${progress}%` }}
@@ -559,10 +741,10 @@ function App() {
           </div>
 
           {/* Logs Section */}
-          <div className="p-4 font-mono text-sm bg-gray-900 rounded-lg">
+          <div className="p-2 sm:p-4 font-mono text-xs sm:text-sm bg-gray-900 rounded-lg max-h-48 overflow-y-auto">
             <div className="text-green-400">
               {logs.map((log, index) => (
-                <div key={index} className="py-1">
+                <div key={index} className="py-0.5 sm:py-1 break-words">
                   {`> ${log}`}
                 </div>
               ))}
@@ -585,7 +767,66 @@ function App() {
           )}
         </div>
 
-        {openedConfig ? <ConfigureProxiesAndAgentsView /> : undefined}
+        {openedConfig && <ConfigureProxiesAndAgentsView addToast={addToast} onClose={() => setOpenedConfig(false)} />}
+
+        {/* Port Scan Results Modal */}
+        {showScanResults && scanResults.length > 0 && (
+          <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-md shadow-lg w-full max-w-lg p-4 sm:p-8">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg sm:text-xl font-bold text-gray-800">🔍 Port Scan Results</h2>
+                <button
+                  onClick={() => setShowScanResults(false)}
+                  className="text-gray-500 hover:text-gray-700 p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="py-2 px-2 sm:px-4">Port</th>
+                      <th className="py-2 px-2 sm:px-4">Service</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scanResults.map((result, index) => (
+                      <tr key={index} className="border-b hover:bg-gray-50">
+                        <td className="py-2 px-2 sm:px-4 font-mono text-pink-600">{result.port}</td>
+                        <td className="py-2 px-2 sm:px-4">{result.service}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-4 text-sm text-gray-500">
+                Found {scanResults.length} open port(s)
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Recommendation Display */}
+        {recommendation && (
+          <div className="fixed bottom-4 right-4 left-4 sm:left-auto bg-yellow-100 border border-yellow-300 rounded-lg p-3 sm:p-4 shadow-lg max-w-sm z-30">
+            <div className="flex justify-between items-start gap-2">
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-yellow-800 text-sm sm:text-base">💡 Recommended Method</p>
+                <p className="text-xs sm:text-sm text-yellow-700 break-words">{recommendation.reason}</p>
+              </div>
+              <button
+                onClick={() => setRecommendation(null)}
+                className="text-yellow-600 hover:text-yellow-800 flex-shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Toast Notifications */}
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
 
         <div className="flex flex-col items-center">
           <span className="text-sm text-center text-gray-500">
