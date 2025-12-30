@@ -120,5 +120,9 @@ export function createTcpClient(
     socket["open"] = false;
   });
 
+  socket.on("error", () => {
+    socket["open"] = false;
+  });
+
   return socket;
 }

